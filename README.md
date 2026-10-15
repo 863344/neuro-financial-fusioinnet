@@ -16,4 +16,8 @@ Python dependencies used by the source include torch, torch-geometric, transform
 
 ## Current status
 
-The training entry point uses `build_dynamic_sparse_edge_index` for both training and evaluation. Loss calculation aligns prediction and target shapes, and mixed precision is enabled only on CUDA. Training results have not yet been verified by an end-to-end run.
+The training entry point uses `build_dynamic_sparse_edge_index` for both training and evaluation. Loss calculation aligns prediction and target shapes, and mixed precision is enabled only on CUDA. The PBL report documents completed training and evaluation across three independent runs. Its results table shows that the Temporal-Only baseline outperformed Spatial GNN-Only and FusionNet in every run. The updated repository code has not independently reproduced those reported experiments.
+
+## Project presentation
+
+[Download the PowerPoint](presentation/Neuro-Financial-FusionNet-Project.pptx). It includes the architecture, original report graphs, and per-run evaluation results.
