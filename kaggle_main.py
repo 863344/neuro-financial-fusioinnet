@@ -4,7 +4,7 @@ import torch.optim as optim
 import math
 import copy
 from data_loader import get_dataloaders
-from graph_module import build_fully_connected_edge_index
+from graph_module import build_dynamic_sparse_edge_index
 from train import NeuroFinancialFusionNet
 from ablation_study import TemporalBaseline, SpatialBaseline
 
@@ -13,7 +13,8 @@ def train_and_evaluate(model: nn.Module, model_name: str, train_dl, test_dl, dev
     
     optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-4)
     criterion = nn.MSELoss()
-    scaler = torch.amp.GradScaler('cuda') # AMP Gradient Scaler
+    use_amp = device.type == 'cuda'
+    scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
     
     EPOCHS = 50
     PATIENCE = 5
@@ -21,7 +22,7 @@ def train_and_evaluate(model: nn.Module, model_name: str, train_dl, test_dl, dev
     patience_counter = 0
     best_weights = None
     
-    base_edge = build_fully_connected_edge_index(5).to(device)
+    # Build each graph from the current batch of node features.
     
     for epoch in range(EPOCHS):
         # --- TRAINING ---
@@ -32,13 +33,13 @@ def train_and_evaluate(model: nn.Module, model_name: str, train_dl, test_dl, dev
             x_seq, y = x_seq.to(device), y.to(device)
             bs = x_spatial.size(0)
             x_spatial_flat = x_spatial.view(bs * 5, -1).to(device)
-            batched_edge = torch.cat([base_edge + i * 5 for i in range(bs)], dim=1)
+            batched_edge = build_dynamic_sparse_edge_index(x_spatial_flat, num_nodes=5)
             batch_idx = torch.arange(bs).repeat_interleave(5).to(device)
             
             optimizer.zero_grad()
             
             # AMP Forward Pass
-            with torch.amp.autocast('cuda'):
+            with torch.amp.autocast(device_type=device.type, enabled=use_amp):
                 if model_name == "FusionNet":
                     preds = model(x_seq, x_spatial_flat, batched_edge, batch_idx)
                 elif model_name == "Transformer-Only":
@@ -46,7 +47,7 @@ def train_and_evaluate(model: nn.Module, model_name: str, train_dl, test_dl, dev
                 else: # GNN-Only
                     preds = model(x_spatial_flat, batched_edge, batch_idx)
                 
-                loss = criterion(preds, y)
+                loss = criterion(preds.reshape(-1), y.reshape(-1))
             
             # AMP Backward Pass
             scaler.scale(loss).backward()
@@ -65,10 +66,10 @@ def train_and_evaluate(model: nn.Module, model_name: str, train_dl, test_dl, dev
                 x_seq, y = x_seq.to(device), y.to(device)
                 bs = x_spatial.size(0)
                 x_spatial_flat = x_spatial.view(bs * 5, -1).to(device)
-                batched_edge = torch.cat([base_edge + i * 5 for i in range(bs)], dim=1)
+                batched_edge = build_dynamic_sparse_edge_index(x_spatial_flat, num_nodes=5)
                 batch_idx = torch.arange(bs).repeat_interleave(5).to(device)
                 
-                with torch.amp.autocast('cuda'):
+                with torch.amp.autocast(device_type=device.type, enabled=use_amp):
                     if model_name == "FusionNet":
                         preds = model(x_seq, x_spatial_flat, batched_edge, batch_idx)
                     elif model_name == "Transformer-Only":
@@ -76,7 +77,7 @@ def train_and_evaluate(model: nn.Module, model_name: str, train_dl, test_dl, dev
                     else:
                         preds = model(x_spatial_flat, batched_edge, batch_idx)
                     
-                    test_loss += criterion(preds, y).item()
+                    test_loss += criterion(preds.reshape(-1), y.reshape(-1)).item()
                     
         val_rmse = math.sqrt(test_loss / len(test_dl))
         print(f"Epoch {epoch+1:02d} | Train MSE: {train_loss/len(train_dl):.6f} | Test RMSE: {val_rmse:.6f}")
@@ -92,6 +93,8 @@ def train_and_evaluate(model: nn.Module, model_name: str, train_dl, test_dl, dev
                 print(f"Early stopping triggered. Best Test RMSE: {best_rmse:.6f}")
                 break
                 
+    if best_weights is not None:
+        model.load_state_dict(best_weights)
     return best_rmse
 
 if __name__ == "__main__":

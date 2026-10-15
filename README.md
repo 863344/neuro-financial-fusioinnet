@@ -16,4 +16,4 @@ Python dependencies used by the source include torch, torch-geometric, transform
 
 ## Current status
 
-This repository preserves the current project snapshot; training results have not been verified. `kaggle_main.py` currently imports `build_fully_connected_edge_index`, while `graph_module.py` provides `build_dynamic_sparse_edge_index`; this mismatch must be resolved before running that entry point.
+The training entry point uses `build_dynamic_sparse_edge_index` for both training and evaluation. Loss calculation aligns prediction and target shapes, and mixed precision is enabled only on CUDA. Training results have not yet been verified by an end-to-end run.
